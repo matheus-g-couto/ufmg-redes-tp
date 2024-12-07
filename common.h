@@ -39,8 +39,8 @@ typedef struct sockaddr sockaddr;
 
 void logexit(const char* msg);
 
-int addrparse(const char* addrstr, const char* portstr, sockaddr_storage* storage);
+uint16_t format_port(const char* portstr);
+
+int addrparse(const char* addrstr, uint16_t port, sockaddr_storage* storage);
 
 void addrtostr(const sockaddr* addr, char* str, size_t strsize);
-
-int server_sockaddr_init(const char* protocol, const char* portstr, sockaddr_storage* storage);

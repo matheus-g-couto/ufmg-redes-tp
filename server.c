@@ -20,19 +20,47 @@ void usage(char **argv) {
     exit(EXIT_FAILURE);
 }
 
-int server_sockaddr_init2(uint16_t port, sockaddr_in6 *addr) {
+int server_sockaddr_init(uint16_t port, sockaddr_in6 *addr) {
     if (port == 0) {
         return -1;
     }
 
-    port = htons(port);
-
-    memset(addr, 0, sizeof(addr));
+    memset(addr, 0, sizeof(&addr));
     addr->sin6_family = AF_INET6;
     addr->sin6_addr = in6addr_any;
     addr->sin6_port = port;
 
     return 0;
+}
+
+void handle_client(int csock, const char *client_addrstr) {
+    char buffer[MSGSIZE];
+    while (1) {
+        memset(buffer, 0, MSGSIZE);
+
+        size_t count = recv(csock, buffer, MSGSIZE, 0);
+        if (count == 0) {
+            printf("[log] conexão encerrada pelo cliente %s\n", client_addrstr);
+            break;
+        }
+
+        printf("[msg] %s %d bytes: %s\n", client_addrstr, (int)count, buffer);
+
+        if (0 == strncmp(buffer, "kill", 4)) {
+            printf("[log] conexão encerrada pelo cliente %s\n", client_addrstr);
+            count = send(csock, buffer, strlen(buffer) + 1, 0);
+            break;
+        } else {
+            sprintf(buffer, "msg recebida por: %.450s\n", client_addrstr);
+            count = send(csock, buffer, strlen(buffer) + 1, 0);
+        }
+
+        if (count != strlen(buffer) + 1) {
+            logexit("send");
+        }
+    }
+
+    close(csock);
 }
 
 int main(int argc, char **argv) {
@@ -41,8 +69,8 @@ int main(int argc, char **argv) {
     }
 
     uint16_t p2p_port, client_port;
-    p2p_port = (u_int16_t)atoi(argv[1]);
-    client_port = (u_int16_t)atoi(argv[2]);
+    p2p_port = format_port(argv[1]);
+    client_port = format_port(argv[2]);
 
     int ssock = socket(AF_INET6, SOCK_STREAM, 0);
     if (ssock == -1) {
@@ -62,7 +90,7 @@ int main(int argc, char **argv) {
     }
 
     sockaddr_in6 server_addr;
-    if (0 != server_sockaddr_init2(client_port, &server_addr)) {
+    if (0 != server_sockaddr_init(client_port, &server_addr)) {
         logexit("init sockaddr");
     }
 
@@ -95,18 +123,7 @@ int main(int argc, char **argv) {
 
         printf("[log] connection from %s\n", client_addrstr);
 
-        char buffer[MSGSIZE];
-        memset(buffer, 0, MSGSIZE);
-
-        size_t count = recv(csock, buffer, MSGSIZE, 0);
-        printf("[msg] %s %d bytes: %s\n", client_addrstr, (int)count, buffer);
-
-        sprintf(buffer, "remote endpoint: %.450s\n", client_addrstr);
-        count = send(csock, buffer, strlen(buffer) + 1, 0);
-        if (count != strlen(buffer) + 1) {
-            logexit("send");
-        }
-        close(csock);
+        handle_client(csock, client_addrstr);
     }
     close(ssock);
 

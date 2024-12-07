@@ -11,23 +11,35 @@
 typedef struct sockaddr_storage sockaddr_storage;
 typedef struct sockaddr sockaddr;
 
+void usage(char **argv) {
+    printf("Exemplo de uso:\n");
+    printf("./client <ip> <user server port> <loc server port> <loc id>\n");
+    exit(EXIT_FAILURE);
+}
+
 int main(int argc, char **argv) {
-    if (argc < 3) {
-        logexit("numero de parametros insuficiente\n");
+    if (argc < 5) {
+        usage(argv);
     }
 
-    sockaddr_storage storage;
-    if (0 != addrparse(argv[1], argv[2], &storage)) {
+    uint16_t user_port, loc_port;
+    user_port = format_port(argv[2]);
+    loc_port = format_port(argv[3]);
+
+    uint8_t loc_id = (uint8_t)atoi(argv[4]);
+
+    sockaddr_storage user_storage, loc_storage;
+    if (0 != addrparse(argv[1], user_port, &user_storage)) {
         logexit("erro no parse\n");
     }
 
-    int s = socket(storage.ss_family, SOCK_STREAM, 0);
+    int s = socket(user_storage.ss_family, SOCK_STREAM, 0);
     if (s == -1) {
         logexit("erro no socket\n");
     }
 
-    sockaddr *addr = (sockaddr *)(&storage);
-    if (0 != connect(s, addr, sizeof(storage))) {
+    sockaddr *addr = (sockaddr *)(&user_storage);
+    if (0 != connect(s, addr, sizeof(user_storage))) {
         logexit("erro na conexao\n");
     }
 
@@ -37,30 +49,31 @@ int main(int argc, char **argv) {
     printf("connected to %s\n", addrstr);
 
     char buffer[MSGSIZE];
-    memset(buffer, 0, MSGSIZE);
-    printf("mensagem> ");
-    fgets(buffer, MSGSIZE - 1, stdin);
-
-    size_t count = send(s, buffer, strlen(buffer) + 1, 0);
-    if (count != strlen(buffer) + 1) {
-        logexit("erro no send\n");
-    }
-
-    memset(buffer, 0, MSGSIZE);
-    unsigned total = 0;
     while (1) {
-        count = recv(s, buffer + total, MSGSIZE - total, 0);
-        if (count == 0) {
+        memset(buffer, 0, MSGSIZE);
+        printf("mensagem ('kill' para encerrar)> ");
+        fgets(buffer, MSGSIZE - 1, stdin);
+
+        size_t count = send(s, buffer, strlen(buffer) + 1, 0);
+        if (count != strlen(buffer) + 1) {
+            logexit("erro no send\n");
+        }
+
+        if (strncmp(buffer, "kill", 4) == 0) {
+            printf("encerrando conexão...\n");
             break;
         }
 
-        total += count;
+        memset(buffer, 0, MSGSIZE);
+
+        count = recv(s, buffer, MSGSIZE, 0);
+        if (count == 0) {
+            break;
+        }
+        puts(buffer);
     }
 
-    close(s);
-
-    printf("received %u bytes\n", total);
-    puts(buffer);
-
     exit(EXIT_SUCCESS);
+
+    return 0;
 }

@@ -19,17 +19,16 @@ void logexit(const char* msg) {
     exit(EXIT_FAILURE);
 }
 
-int addrparse(const char* addrstr, const char* portstr, sockaddr_storage* storage) {
-    if (addrstr == NULL || portstr == NULL) {
-        return -1;
-    }
-
+uint16_t format_port(const char* portstr) {
     uint16_t port = (uint16_t)atoi(portstr);
-    if (port == 0) {
+
+    return htons(port);
+}
+
+int addrparse(const char* addrstr, uint16_t port, sockaddr_storage* storage) {
+    if (addrstr == NULL || port == 0) {
         return -1;
     }
-
-    port = htons(port);
 
     in_addr inaddr4;
     if (inet_pton(AF_INET, addrstr, &inaddr4)) {
