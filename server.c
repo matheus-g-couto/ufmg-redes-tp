@@ -12,33 +12,66 @@
 
 typedef struct sockaddr_storage sockaddr_storage;
 typedef struct sockaddr sockaddr;
+typedef struct sockaddr_in6 sockaddr_in6;
+
+void usage(char **argv) {
+    printf("Exemplo de uso:\n");
+    printf("./server <p2p port> <client port>\n");
+    exit(EXIT_FAILURE);
+}
+
+int server_sockaddr_init2(uint16_t port, sockaddr_in6 *addr) {
+    if (port == 0) {
+        return -1;
+    }
+
+    port = htons(port);
+
+    memset(addr, 0, sizeof(addr));
+    addr->sin6_family = AF_INET6;
+    addr->sin6_addr = in6addr_any;
+    addr->sin6_port = port;
+
+    return 0;
+}
 
 int main(int argc, char **argv) {
     if (argc < 3) {
-        logexit("numero de parametros insuficiente");
+        usage(argv);
     }
 
-    sockaddr_storage storage;
-    if (0 != server_sockaddr_init(argv[1], argv[2], &storage)) {
-        logexit("erro no parse");
-    }
+    uint16_t p2p_port, client_port;
+    p2p_port = (u_int16_t)atoi(argv[1]);
+    client_port = (u_int16_t)atoi(argv[2]);
 
-    int s = socket(storage.ss_family, SOCK_STREAM, 0);
-    if (s == -1) {
+    int ssock = socket(AF_INET6, SOCK_STREAM, 0);
+    if (ssock == -1) {
         logexit("erro no socket");
     }
 
+    // permite o socket receber conexoes ipv4 e ipv6
+    int ipv6_only = 0;
+    if (0 != setsockopt(ssock, IPPROTO_IPV6, IPV6_V6ONLY, &ipv6_only, sizeof(ipv6_only))) {
+        logexit("config socket");
+    }
+
+    // reuso de socket
     int enable = 1;
-    if (0 != setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int))) {
+    if (0 != setsockopt(ssock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int))) {
         logexit("sockopt");
     }
 
-    sockaddr *addr = (sockaddr *)(&storage);
-    if (0 != bind(s, addr, sizeof(storage))) {
+    sockaddr_in6 server_addr;
+    if (0 != server_sockaddr_init2(client_port, &server_addr)) {
+        logexit("init sockaddr");
+    }
+
+    sockaddr *addr = (sockaddr *)(&server_addr);
+    if (0 != bind(ssock, addr, sizeof(server_addr))) {
         logexit("erro no bind");
     }
 
-    if (0 != listen(s, MAX_CONNECTIONS)) {
+    if (0 != listen(ssock, MAX_CONNECTIONS)) {
         logexit("listen");
     }
 
@@ -52,8 +85,8 @@ int main(int argc, char **argv) {
         sockaddr *client_addr = (sockaddr *)(&client_storage);
         socklen_t storagelen = sizeof(client_storage);
 
-        int client_sock = accept(s, client_addr, &storagelen);
-        if (client_sock == -1) {
+        int csock = accept(ssock, client_addr, &storagelen);
+        if (csock == -1) {
             logexit("accept");
         }
 
@@ -65,16 +98,18 @@ int main(int argc, char **argv) {
         char buffer[MSGSIZE];
         memset(buffer, 0, MSGSIZE);
 
-        size_t count = recv(client_sock, buffer, MSGSIZE, 0);
+        size_t count = recv(csock, buffer, MSGSIZE, 0);
         printf("[msg] %s %d bytes: %s\n", client_addrstr, (int)count, buffer);
 
         sprintf(buffer, "remote endpoint: %.450s\n", client_addrstr);
-        count = send(client_sock, buffer, strlen(buffer) + 1, 0);
+        count = send(csock, buffer, strlen(buffer) + 1, 0);
         if (count != strlen(buffer) + 1) {
             logexit("send");
         }
-        close(client_sock);
+        close(csock);
     }
+    close(ssock);
 
     exit(EXIT_SUCCESS);
+    return 0;
 }

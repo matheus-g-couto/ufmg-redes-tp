@@ -82,29 +82,3 @@ void addrtostr(const sockaddr* addr, char* str, size_t strsize) {
         sprintf(str, "IPv%d %s %hu", version, addrstr, port);
     }
 }
-
-int server_sockaddr_init(const char* protocol, const char* portstr, sockaddr_storage* storage) {
-    uint16_t port = (uint16_t)atoi(portstr);
-    if (port == 0) {
-        return -1;
-    }
-
-    port = htons(port);
-
-    memset(storage, 0, sizeof(*storage));
-    if (0 == strcmp(protocol, "v4")) {
-        sockaddr_in* addr4 = (sockaddr_in*)storage;
-        addr4->sin_family = AF_INET;
-        addr4->sin_port = port;
-        addr4->sin_addr.s_addr = INADDR_ANY;
-        return 0;
-    } else if (0 == strcmp(protocol, "v6")) {
-        sockaddr_in6* addr6 = (sockaddr_in6*)storage;
-        addr6->sin6_family = AF_INET6;
-        addr6->sin6_port = port;
-        addr6->sin6_addr = in6addr_any;
-        return 0;
-    } else {
-        return -1;
-    }
-}
