@@ -1,4 +1,5 @@
 #include <inttypes.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,11 @@
 typedef struct sockaddr_storage sockaddr_storage;
 typedef struct sockaddr sockaddr;
 typedef struct sockaddr_in6 sockaddr_in6;
+
+typedef struct client_data {
+    int csock;
+    struct sockaddr_storage storage;
+} client_data;
 
 void usage(char **argv) {
     printf("Exemplo de uso:\n");
@@ -31,6 +37,20 @@ int server_sockaddr_init(uint16_t port, sockaddr_in6 *addr) {
     addr->sin6_port = port;
 
     return 0;
+}
+
+void client_thread(void *data) {
+    client_data *cdata = (struct client_data *)data;
+    struct sockaddr *caddr = (struct sockaddr *)(&cdata->storage);
+
+    char client_addrstr[MSGSIZE];
+    addrtostr(caddr, client_addrstr, MSGSIZE);
+
+    printf("[log] connection from %s\n", client_addrstr);
+
+    handle_client(cdata->csock, client_addrstr);
+
+    pthread_exit(EXIT_SUCCESS);
 }
 
 void handle_client(int csock, const char *client_addrstr) {
@@ -118,12 +138,16 @@ int main(int argc, char **argv) {
             logexit("accept");
         }
 
-        char client_addrstr[MSGSIZE];
-        addrtostr(client_addr, client_addrstr, MSGSIZE);
+        client_data *cdata = malloc(sizeof(*cdata));
+        if (!cdata) {
+            logexit("malloc");
+        }
 
-        printf("[log] connection from %s\n", client_addrstr);
+        cdata->csock = csock;
+        memcpy(&(cdata->storage), &client_storage, sizeof(client_storage));
 
-        handle_client(csock, client_addrstr);
+        pthread_t tid;
+        pthread_create(&tid, NULL, client_thread, cdata);
     }
     close(ssock);
 
