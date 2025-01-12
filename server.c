@@ -9,21 +9,29 @@
 
 #include "common.h"
 
-#define MAX_CONNECTIONS 10
+#define MAX_CLIENT_CONNECTIONS 10
+#define MAX_PEERS 2
 
 typedef struct sockaddr_storage sockaddr_storage;
 typedef struct sockaddr sockaddr;
 typedef struct sockaddr_in6 sockaddr_in6;
 
 typedef struct client_data {
-    int csock;
+    int connsock;
     struct sockaddr_storage storage;
 } client_data;
 
 typedef struct p2p_data {
-    int sock;
-    uint8_t alr_used_port;
+    int port;
 } p2p_data;
+
+typedef struct user_info {
+    char id[10];
+    int loc_or_auth;
+} user_info;
+
+uint8_t active_con;
+user_info *users[10];
 
 void usage(char **argv) {
     printf("Exemplo de uso:\n");
@@ -51,55 +59,27 @@ void client_thread(void *data) {
     char client_addrstr[MSGSIZE];
     addrtostr(caddr, client_addrstr, MSGSIZE);
 
-    printf("[log] connection from %s\n", client_addrstr);
-
-    handle_client(cdata->csock, client_addrstr);
-
-    pthread_exit(EXIT_SUCCESS);
-}
-
-void p2p_thread(void *data) {
-    p2p_data *pdata = (struct p2p_data *)data;
-
-    sockaddr_storage client_storage;
-    sockaddr *client_addr = (sockaddr *)(&client_storage);
-    socklen_t storagelen = sizeof(client_storage);
-
-    int csock = accept(pdata->sock, client_addr, &storagelen);
-    pid_t cpid;
-
-    char rec_buffer[MSGSIZE], send_buffer[MSGSIZE];
-
-    cpid = fork();
-
-    if (cpid == 0) {
-        while (1) {
-            memset(rec_buffer, 0, MSGSIZE);
-            /*Receiving the request from client*/
-            recv(csock, rec_buffer, sizeof(rec_buffer), 0);
-            printf("\nCLIENT : %s\n", rec_buffer);
-        }
-    } else {
-        while (1) {
-            memset(send_buffer, 0, MSGSIZE);
-            printf("\nType a message here ...  ");
-            /*Read the message from client*/
-            fgets(send_buffer, MSGSIZE - 1, stdin);
-            /*Sends the message to client*/
-            send(csock, send_buffer, strlen(send_buffer) + 1, 0);
-            printf("\nMessage sent !\n");
-        }
+    if (active_con > MAX_CLIENT_CONNECTIONS) {
+        printf("Client limit exceeded\n");
+        close(cdata->connsock);
+        pthread_exit(EXIT_FAILURE);
+        return;
     }
 
+    handle_client(cdata->connsock, client_addrstr);
+
     pthread_exit(EXIT_SUCCESS);
 }
 
-void handle_client(int csock, const char *client_addrstr) {
+void handle_client(int connsock, const char *client_addrstr) {
+    printf("[log] connection from %s\n", client_addrstr);
+    active_con++;
+
     char buffer[MSGSIZE];
     while (1) {
         memset(buffer, 0, MSGSIZE);
 
-        size_t count = recv(csock, buffer, MSGSIZE, 0);
+        size_t count = recv(connsock, buffer, MSGSIZE, 0);
         if (count == 0) {
             printf("[log] conexão encerrada pelo cliente %s\n", client_addrstr);
             break;
@@ -109,11 +89,11 @@ void handle_client(int csock, const char *client_addrstr) {
 
         if (0 == strncmp(buffer, "kill", 4)) {
             printf("[log] conexão encerrada pelo cliente %s\n", client_addrstr);
-            count = send(csock, buffer, strlen(buffer) + 1, 0);
+            count = send(connsock, buffer, strlen(buffer) + 1, 0);
             break;
         } else {
             sprintf(buffer, "msg recebida por: %.450s\n", client_addrstr);
-            count = send(csock, buffer, strlen(buffer) + 1, 0);
+            count = send(connsock, buffer, strlen(buffer) + 1, 0);
         }
 
         if (count != strlen(buffer) + 1) {
@@ -121,8 +101,15 @@ void handle_client(int csock, const char *client_addrstr) {
         }
     }
 
-    close(csock);
+    close(connsock);
+    active_con--;
 }
+
+// void handle_client_limit(int connsock, const char *client_addrstr) {
+//     char buffer[MSGSIZE];
+
+//     close(connsock);
+// }
 
 void config_sock(int sock) {
     // permite o socket receber conexoes ipv4 e ipv6
@@ -138,6 +125,61 @@ void config_sock(int sock) {
     }
 }
 
+int start_client_sock(uint16_t port) {
+    int sock = socket(AF_INET6, SOCK_STREAM, 0);
+    if (sock == -1) {
+        logexit("erro no socket");
+    }
+
+    config_sock(sock);
+
+    sockaddr_in6 addr;
+    if (0 != server_sockaddr_init(port, &addr)) {
+        logexit("init client sockaddr");
+    }
+
+    sockaddr *saddr = (sockaddr *)(&addr);
+    if (0 != bind(sock, saddr, sizeof(addr))) {
+        logexit("erro no bind");
+    }
+
+    if (0 != listen(sock, MAX_CLIENT_CONNECTIONS)) {
+        logexit("listen");
+    }
+
+    return sock;
+}
+
+int start_p2p_sock(uint16_t port) {
+    int sock = socket(AF_INET6, SOCK_STREAM, 0);
+    if (sock == -1) {
+        logexit("erro no socket");
+    }
+
+    config_sock(sock);
+
+    sockaddr_in6 addr;
+    if (0 != server_sockaddr_init(port, &addr)) {
+        logexit("init p2p sockaddr");
+    }
+
+    if (0 != connect(sock, (sockaddr *)&addr, sizeof(addr))) {
+        printf("No peer found, starting to listen...");
+
+        if (0 != bind(sock, (sockaddr *)&addr, sizeof(addr))) {
+            logexit("Peer bind error");
+        }
+
+        if (0 != listen(sock, MAX_PEERS)) {
+            logexit("Peer listen error");
+        }
+    } else {
+        // handle new peer
+    }
+
+    return sock;
+}
+
 int main(int argc, char **argv) {
     if (argc < 3) {
         usage(argv);
@@ -147,78 +189,25 @@ int main(int argc, char **argv) {
     p2p_port = format_port(argv[1]);
     client_port = format_port(argv[2]);
 
-    int ssock = socket(AF_INET6, SOCK_STREAM, 0), p2psock = socket(AF_INET6, SOCK_STREAM, 0);
-    if (ssock == -1) {
-        logexit("erro no socket");
-    }
-    if (p2psock == -1) {
-        logexit("erro no socket");
-    }
+    // start sockets
+    int clientsock = start_client_sock(client_port);
+    int p2psock = start_p2p_sock(p2p_port);
 
-    // handle p2p connection
-    config_sock(p2psock);
+    // char addrstr[MSGSIZE];
+    // addrtostr(saddr, addrstr, MSGSIZE);
 
-    uint8_t alr_used_port = 0;
+    // printf("listening client on %s, waiting connection\n", addrstr);
 
-    sockaddr_in6 p2p_addr;
-    if (0 != server_sockaddr_init(p2p_port, &p2p_addr)) {
-        logexit("init p2p sockaddr");
-    }
-
-    sockaddr *paddr = (sockaddr *)(&p2p_addr);
-    if (0 != bind(p2psock, paddr, sizeof(p2p_addr))) {
-        alr_used_port = 1;  // se o bind der errado, significa que a porta esta em uso
-
-        if (0 != server_sockaddr_init(p2p_port + alr_used_port, &p2p_addr)) {
-            logexit("init p2p sockaddr");
-        }
-
-        if (0 != bind(p2psock, paddr, sizeof(p2p_addr))) {
-            logexit("bind");
-        }
-    }
-
-    if (0 != listen(p2psock, 1)) {
-        logexit("Peer limit exceeded");
-    }
-
-    printf("listening p2p on port %d\n", htons(p2p_port + alr_used_port));
-
-    p2p_data *pdata = malloc(sizeof(*pdata));
-    pdata->sock = p2psock;
-    pdata->alr_used_port = alr_used_port;
-
-    pthread_t ptid;
-    pthread_create(&ptid, NULL, p2p_thread, pdata);
-
-    // handle client connection
-    config_sock(ssock);
-    sockaddr_in6 server_addr;
-    if (0 != server_sockaddr_init(client_port, &server_addr)) {
-        logexit("init client sockaddr");
-    }
-
-    sockaddr *saddr = (sockaddr *)(&server_addr);
-    if (0 != bind(ssock, saddr, sizeof(server_addr))) {
-        logexit("erro no bind");
-    }
-
-    if (0 != listen(ssock, MAX_CONNECTIONS)) {
-        logexit("listen");
-    }
-
-    char addrstr[MSGSIZE];
-    addrtostr(saddr, addrstr, MSGSIZE);
-
-    printf("listening client on %s, waiting connection\n", addrstr);
+    *users = malloc(10 * sizeof(user_info));
+    active_con = 0;
 
     while (1) {
         sockaddr_storage client_storage;
         sockaddr *client_addr = (sockaddr *)(&client_storage);
         socklen_t storagelen = sizeof(client_storage);
 
-        int csock = accept(ssock, client_addr, &storagelen);
-        if (csock == -1) {
+        int connsock = accept(clientsock, client_addr, &storagelen);
+        if (connsock == -1) {
             logexit("accept");
         }
 
@@ -227,13 +216,14 @@ int main(int argc, char **argv) {
             logexit("malloc");
         }
 
-        cdata->csock = csock;
+        cdata->connsock = connsock;
         memcpy(&(cdata->storage), &client_storage, sizeof(client_storage));
 
         pthread_t tid;
         pthread_create(&tid, NULL, client_thread, cdata);
     }
-    close(ssock);
+    close(clientsock);
+    close(p2psock);
 
     exit(EXIT_SUCCESS);
     return 0;
