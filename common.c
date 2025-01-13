@@ -14,6 +14,12 @@ typedef struct in6_addr in6_addr;
 typedef struct sockaddr_in sockaddr_in;
 typedef struct sockaddr_in6 sockaddr_in6;
 
+typedef struct {
+    int id;
+    int sock;
+    int loc;
+} Client;
+
 void logexit(const char* msg) {
     perror(msg);
     exit(EXIT_FAILURE);
@@ -80,4 +86,12 @@ void addrtostr(const sockaddr* addr, char* str, size_t strsize) {
     if (str) {
         sprintf(str, "IPv%d %s %hu", version, addrstr, port);
     }
+}
+
+Client get_client(Client* clist, int n, int sock) {
+    for (int i = 0; i < n; i++) {
+        if (clist[i].sock == sock) return clist[i];
+    }
+
+    return (Client){-1, -1, 0};
 }

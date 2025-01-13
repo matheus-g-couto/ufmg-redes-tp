@@ -35,7 +35,15 @@ typedef struct sockaddr sockaddr;
 
 #define MSGSIZE 500
 
+#define RAND_MAX 10
+
 #endif
+
+typedef struct {
+    int id;
+    int sock;
+    int loc;
+} Client;
 
 void logexit(const char* msg);
 
@@ -44,3 +52,5 @@ uint16_t format_port(const char* portstr);
 int addrparse(const char* addrstr, uint16_t port, sockaddr_storage* storage);
 
 void addrtostr(const sockaddr* addr, char* str, size_t strsize);
+
+Client get_client(Client* clist, int n, int sock);

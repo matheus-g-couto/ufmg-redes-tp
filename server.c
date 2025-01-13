@@ -25,15 +25,12 @@ typedef struct p2p_data {
     int port;
 } p2p_data;
 
-typedef struct user_info {
-    char id[10];
-    int loc_or_auth;
-} user_info;
-
 int peer_id;
 
 int active_con;
-user_info *users[10];
+
+int n_clients;
+Client client_list[10];
 
 void usage() {
     printf("Exemplo de uso:\n");
@@ -123,6 +120,26 @@ int start_p2p_sock(uint16_t port) {
     return sock;
 }
 
+void kill_client(Client client) {
+    printf("Client %d removed (Loc %d)\n", client.id, client.loc);
+
+    int client_pos;
+    for (int i = 0; i < n_clients; i++) {
+        if (client_list[i].id == client.id) {
+            client_pos = i;
+            break;
+        }
+    }
+
+    for (int i = client_pos; i < n_clients - 1; i++) {
+        client_list[i] = client_list[i + 1];
+    }
+
+    client_list[n_clients - 1] = (Client){-1, -1, 0};
+
+    n_clients--;
+}
+
 int handle_client(int sock) {
     printf("[log] connection\n");
 
@@ -132,19 +149,18 @@ int handle_client(int sock) {
     size_t count = recv(sock, buffer, MSGSIZE, 0);
     if (count <= 0) {
         printf("[log] conexão encerrada\n");
-        close(sock);
-        active_con--;
+
         return 1;
     }
 
     printf("[msg] %d bytes: %s\n", (int)count, buffer);
 
     if (0 == strncmp(buffer, "kill", 4)) {
-        printf("[log] conexão encerrada pelo cliente\n");
+        Client to_kill = get_client(client_list, n_clients, sock);
+        kill_client(to_kill);
+
         count = send(sock, buffer, strlen(buffer) + 1, 0);
 
-        close(sock);
-        active_con--;
         return 1;
     }
 
@@ -159,6 +175,8 @@ int handle_client(int sock) {
 }
 
 int main(int argc, char **argv) {
+    srand(time(NULL));
+
     if (argc < 3) {
         usage();
     }
@@ -179,6 +197,7 @@ int main(int argc, char **argv) {
     FD_SET(p2psock, &current_socks);
 
     int has_peer = 0;
+    n_clients = 0;
 
     char buffer[MSGSIZE];
 
@@ -197,7 +216,25 @@ int main(int argc, char **argv) {
 
                     if (newclientsock >= 0) {
                         FD_SET(newclientsock, &current_socks);
-                        printf("New client connected.\n");
+
+                        if (0 >= recv(newclientsock, buffer, MSGSIZE, 0)) {
+                            logexit("rec loc");
+                        }
+
+                        Client new_client;
+                        new_client.id = n_clients;
+                        new_client.sock = newclientsock;
+                        new_client.loc = atoi(buffer);
+
+                        client_list[n_clients] = new_client;
+                        n_clients++;
+
+                        printf("Client %d added (Loc %d)\n", new_client.id, new_client.loc);
+
+                        memset(buffer, 0, MSGSIZE);
+                        sprintf(buffer, "%d", new_client.id);
+
+                        send(newclientsock, buffer, strlen(buffer) + 1, 0);
                     }
                 } else if (i == p2psock) {
                     int newpeersock = accept(p2psock, NULL, NULL);
@@ -209,8 +246,13 @@ int main(int argc, char **argv) {
                             send(newpeersock, buffer, strlen(buffer) + 1, 0);
                             close(newpeersock);
                         } else {
-                            printf("Peer connected.\n");
+                            peer_id = rand() % 20;
+
+                            printf("Peer %d connected\n", peer_id);
                             FD_SET(newpeersock, &current_socks);
+
+                            // sprintf(buffer, "New peer ID: %d", peer_id);
+                            // send(newpeersock, buffer, strlen(buffer) + 1, 0);
                             has_peer++;
                         }
                     }
@@ -221,6 +263,8 @@ int main(int argc, char **argv) {
                         int end_connection = handle_client(i);
                         if (end_connection) {
                             FD_CLR(i, &current_socks);
+
+                            close(i);
                         }
                     }
                 }

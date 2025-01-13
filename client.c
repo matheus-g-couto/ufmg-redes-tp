@@ -56,6 +56,27 @@ int main(int argc, char **argv) {
     int locsock = start_server_sock(argv[1], loc_port);
 
     char buffer[MSGSIZE];
+
+    int suid, slid;
+
+    memset(buffer, 0, MSGSIZE);
+    sprintf(buffer, "%d", loc_id);
+    send(usersock, buffer, strlen(buffer) + 1, 0);
+
+    memset(buffer, 0, MSGSIZE);
+    recv(usersock, buffer, MSGSIZE, 0);
+    suid = atoi(buffer);
+
+    memset(buffer, 0, MSGSIZE);
+    sprintf(buffer, "%d", loc_id);
+    send(locsock, buffer, strlen(buffer) + 1, 0);
+
+    memset(buffer, 0, MSGSIZE);
+    recv(locsock, buffer, MSGSIZE, 0);
+    slid = atoi(buffer);
+
+    printf("SU New ID: %d\nSL New ID: %d\n", suid, slid);
+
     while (1) {
         memset(buffer, 0, MSGSIZE);
         printf("mensagem ('kill' para encerrar)> ");
