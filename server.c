@@ -11,7 +11,7 @@
 #include "common.h"
 
 #define MAX_CLIENT_CONNECTIONS 10
-#define MAX_PEERS 2
+#define MAX_PEERS 1
 
 typedef struct sockaddr_storage sockaddr_storage;
 typedef struct sockaddr sockaddr;
@@ -25,7 +25,7 @@ typedef struct p2p_data {
     int port;
 } p2p_data;
 
-int peer_id;
+int peer_id, my_id;
 
 int active_con;
 
@@ -96,6 +96,9 @@ int start_p2p_sock(uint16_t port) {
         logexit("erro no socket");
     }
 
+    char buffer[MSGSIZE];
+    memset(buffer, 0, sizeof(buffer));
+
     config_sock(sock);
 
     sockaddr_in6 addr;
@@ -114,7 +117,24 @@ int start_p2p_sock(uint16_t port) {
             logexit("Peer listen error");
         }
     } else {
-        // handle new peer
+        recv(sock, buffer, MSGSIZE, 0);
+        puts(buffer);
+
+        if (0 == strncmp(buffer, "Peer limit exceeded", 20)) {
+            return -1;
+        }
+
+        if (0 == strncmp(buffer, "New Peer ID", 11)) {
+            sscanf(buffer, "New Peer ID: %d", &my_id);
+
+            peer_id = rand() % 20;
+            printf("Peer %d connected\n", peer_id);
+
+            memset(buffer, 0, MSGSIZE);
+            sprintf(buffer, "New Peer ID: %d", peer_id);
+
+            send(sock, buffer, MSGSIZE, 0);
+        }
     }
 
     return sock;
@@ -141,8 +161,6 @@ void kill_client(Client client) {
 }
 
 int handle_client(int sock) {
-    printf("[log] connection\n");
-
     char buffer[MSGSIZE];
     memset(buffer, 0, MSGSIZE);
 
@@ -153,8 +171,6 @@ int handle_client(int sock) {
         return 1;
     }
 
-    printf("[msg] %d bytes: %s\n", (int)count, buffer);
-
     if (0 == strncmp(buffer, "kill", 4)) {
         Client to_kill = get_client(client_list, n_clients, sock);
         kill_client(to_kill);
@@ -163,6 +179,14 @@ int handle_client(int sock) {
 
         return 1;
     }
+
+    if (0 == strncmp(buffer, "New Peer ID", 11)) {
+        puts(buffer);
+        sscanf(buffer, "New Peer ID: %d", &my_id);
+        return 0;
+    }
+
+    printf("[msg] %d bytes: %s\n", (int)count, buffer);
 
     sprintf(buffer, "msg recebida\n");
     count = send(sock, buffer, strlen(buffer) + 1, 0);
@@ -189,6 +213,10 @@ int main(int argc, char **argv) {
     // start sockets
     int clientsock = start_client_sock(client_port);
     int p2psock = start_p2p_sock(p2p_port);
+
+    if (p2psock == -1) {
+        return 1;
+    }
 
     // adiciona os sockets ao set
     fd_set current_socks, ready_socks;
@@ -241,8 +269,7 @@ int main(int argc, char **argv) {
 
                     if (newpeersock >= 0) {
                         if (has_peer >= MAX_PEERS) {
-                            printf("Peer limit exceeded\n");
-                            sprintf(buffer, "Peer limit exceeded\n");
+                            sprintf(buffer, "Peer limit exceeded");
                             send(newpeersock, buffer, strlen(buffer) + 1, 0);
                             close(newpeersock);
                         } else {
@@ -251,16 +278,18 @@ int main(int argc, char **argv) {
                             printf("Peer %d connected\n", peer_id);
                             FD_SET(newpeersock, &current_socks);
 
-                            // sprintf(buffer, "New peer ID: %d", peer_id);
-                            // send(newpeersock, buffer, strlen(buffer) + 1, 0);
+                            sprintf(buffer, "New Peer ID: %d", peer_id);
+                            send(newpeersock, buffer, strlen(buffer) + 1, 0);
                             has_peer++;
                         }
                     }
                 } else {
                     if (has_peer && i == p2psock) {
+                        printf("p2p\n");
                         // handlePeerCommunication(i, &has_peer);
                     } else {
                         int end_connection = handle_client(i);
+
                         if (end_connection) {
                             FD_CLR(i, &current_socks);
 

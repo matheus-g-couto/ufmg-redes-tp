@@ -35,8 +35,6 @@ typedef struct sockaddr sockaddr;
 
 #define MSGSIZE 500
 
-#define RAND_MAX 10
-
 #endif
 
 typedef struct {
