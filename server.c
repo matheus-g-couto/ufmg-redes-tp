@@ -33,7 +33,7 @@ int n_clients;
 Client client_list[10];
 
 int n_users;
-User users[30];
+User users[MAX_USERS];
 
 void usage() {
     printf("Exemplo de uso:\n");
@@ -176,9 +176,8 @@ int handle_peer(int sock) {
     return 0;
 }
 
-int find_user_by_id(char *uid) {
+int find_user_by_id(const char *uid) {
     for (int i = 0; i < n_users; i++) {
-        printf("%s\n", users[i].id);
         if (0 == strcmp(users[i].id, uid)) return i;
     }
 
@@ -190,7 +189,13 @@ int add_user(int sock, const char *uid, int special) {
 
     int pos = find_user_by_id(uid);
     if (pos == -1) {
+        if (n_users >= MAX_USERS) return 2;
+
         User new_user;
+        strcpy(new_user.id, uid);
+        new_user.special = special;
+
+        users[n_users] = new_user;
 
         n_users++;
 
@@ -228,6 +233,7 @@ int handle_client(int sock) {
         int special, result;
 
         if (2 == sscanf(buffer, "add %s %d", uid, &special) && strlen(uid) == 10) {
+            printf("REQ_USRADD %s %d\n", uid, special);
             result = add_user(sock, uid, special);
         } else {
             result = -1;
@@ -245,10 +251,14 @@ int handle_client(int sock) {
             case 1:
                 sprintf(buffer, "User updated: %s", uid);
                 break;
+
+            case 2:
+                sprintf(buffer, "User limit exceeded");
+                break;
         }
     }
 
-    printf("[msg] %d bytes: %s\n", (int)count, buffer);
+    // printf("[msg] %d bytes: %s\n", (int)count, buffer);
 
     // sprintf(buffer, "msg recebida\n");
     count = send(sock, buffer, strlen(buffer) + 1, 0);

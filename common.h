@@ -34,6 +34,7 @@ typedef struct sockaddr sockaddr;
 #define OK 0
 
 #define MSGSIZE 500
+#define MAX_USERS 2
 
 #endif
 
