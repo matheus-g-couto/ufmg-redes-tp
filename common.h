@@ -49,6 +49,11 @@ typedef struct {
     int special;
 } User;
 
+typedef struct {
+    char id[11];
+    int loc_id;
+} UserLoc;
+
 void logexit(const char* msg);
 
 uint16_t format_port(const char* portstr);

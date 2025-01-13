@@ -95,21 +95,56 @@ int main(int argc, char **argv) {
             if (count != strlen(buffer) + 1) {
                 logexit("erro no send\n");
             }
+            memset(buffer, 0, MSGSIZE);
+
+            count = recv(usersock, buffer, MSGSIZE, 0);
+            if (count == 0) {
+                break;
+            }
+            puts(buffer);
+        } else if (0 == strncmp(buffer, "find", 4)) {
+            count = send(locsock, buffer, strlen(buffer) + 1, 0);
+            if (count != strlen(buffer) + 1) {
+                logexit("erro no send\n");
+            }
+            memset(buffer, 0, MSGSIZE);
+
+            count = recv(locsock, buffer, MSGSIZE, 0);
+            if (count == 0) {
+                break;
+            }
+            puts(buffer);
         } else {
             count = send(usersock, buffer, strlen(buffer) + 1, 0);
             count = send(locsock, buffer, strlen(buffer) + 1, 0);
             if (count != strlen(buffer) + 1) {
                 logexit("erro no send\n");
             }
+
+            memset(buffer, 0, MSGSIZE);
+
+            count = recv(usersock, buffer, MSGSIZE, 0);
+            if (count == 0) {
+                break;
+            }
+            puts(buffer);
+
+            memset(buffer, 0, MSGSIZE);
+
+            count = recv(locsock, buffer, MSGSIZE, 0);
+            if (count == 0) {
+                break;
+            }
+            puts(buffer);
         }
 
-        memset(buffer, 0, MSGSIZE);
+        // memset(buffer, 0, MSGSIZE);
 
-        count = recv(usersock, buffer, MSGSIZE, 0);
-        if (count == 0) {
-            break;
-        }
-        puts(buffer);
+        // count = recv(usersock, buffer, MSGSIZE, 0);
+        // if (count == 0) {
+        //     break;
+        // }
+        // puts(buffer);
     }
 
     close(usersock);

@@ -35,6 +35,9 @@ Client client_list[10];
 int n_users;
 User users[MAX_USERS];
 
+int n_locs;
+UserLoc userlocs[MAX_USERS];
+
 void usage() {
     printf("Exemplo de uso:\n");
     printf("./server <p2p port> <client port>\n");
@@ -184,7 +187,15 @@ int find_user_by_id(const char *uid) {
     return -1;
 }
 
-int add_user(int sock, const char *uid, int special) {
+int find_user_loc_by_id(const char *uid) {
+    for (int i = 0; i < n_locs; i++) {
+        if (0 == strcmp(userlocs[i].id, uid)) return i;
+    }
+
+    return 0;
+}
+
+int add_user(const char *uid, int special) {
     int result;
 
     int pos = find_user_by_id(uid);
@@ -205,6 +216,19 @@ int add_user(int sock, const char *uid, int special) {
         result = 1;
     }
 
+    return result;
+}
+
+int find_user(const char *uid) {
+    int result;
+
+    int pos = find_user_loc_by_id(uid);
+    printf("%d\n", pos);
+    if (pos == 0) {
+        result = 0;
+    } else {
+        result = userlocs[pos].loc_id;
+    }
     return result;
 }
 
@@ -234,7 +258,7 @@ int handle_client(int sock) {
 
         if (2 == sscanf(buffer, "add %s %d", uid, &special) && strlen(uid) == 10) {
             printf("REQ_USRADD %s %d\n", uid, special);
-            result = add_user(sock, uid, special);
+            result = add_user(uid, special);
         } else {
             result = -1;
         }
@@ -255,6 +279,31 @@ int handle_client(int sock) {
             case 2:
                 sprintf(buffer, "User limit exceeded");
                 break;
+        }
+    }
+
+    if (0 == strncmp(buffer, "find", 4)) {
+        char uid[11];
+        int result;
+
+        if (1 == sscanf(buffer, "find %s", uid) && strlen(uid) == 10) {
+            printf("REQ_USRLOC %s\n", uid);
+            result = find_user(uid);
+        } else {
+            result = -2;
+        }
+
+        switch (result) {
+            case -2:
+                sprintf(buffer, "wrong format");
+                break;
+
+            case 0:
+                sprintf(buffer, "User not found");
+                break;
+
+            default:
+                sprintf(buffer, "Current location: %d", result);
         }
     }
 
@@ -309,8 +358,7 @@ int main(int argc, char **argv) {
 
     int has_peer = 0;
     int peersock;
-    n_clients = 0;
-    n_users = 0;
+    n_clients = n_users = n_locs = 0;
 
     char buffer[MSGSIZE];
 
