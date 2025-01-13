@@ -32,6 +32,9 @@ int active_con;
 int n_clients;
 Client client_list[10];
 
+int n_users;
+User users[30];
+
 void usage() {
     printf("Exemplo de uso:\n");
     printf("./server <p2p port> <client port>\n");
@@ -173,6 +176,33 @@ int handle_peer(int sock) {
     return 0;
 }
 
+int find_user_by_id(char *uid) {
+    for (int i = 0; i < n_users; i++) {
+        printf("%s\n", users[i].id);
+        if (0 == strcmp(users[i].id, uid)) return i;
+    }
+
+    return -1;
+}
+
+int add_user(int sock, const char *uid, int special) {
+    int result;
+
+    int pos = find_user_by_id(uid);
+    if (pos == -1) {
+        User new_user;
+
+        n_users++;
+
+        result = 0;
+    } else {
+        users[pos].special = special;
+        result = 1;
+    }
+
+    return result;
+}
+
 int handle_client(int sock) {
     char buffer[MSGSIZE];
     memset(buffer, 0, MSGSIZE);
@@ -193,9 +223,34 @@ int handle_client(int sock) {
         return 1;
     }
 
+    if (0 == strncmp(buffer, "add", 3)) {
+        char uid[11];
+        int special, result;
+
+        if (2 == sscanf(buffer, "add %s %d", uid, &special) && strlen(uid) == 10) {
+            result = add_user(sock, uid, special);
+        } else {
+            result = -1;
+        }
+
+        switch (result) {
+            case -1:
+                sprintf(buffer, "wrong format");
+                break;
+
+            case 0:
+                sprintf(buffer, "New user added: %s", uid);
+                break;
+
+            case 1:
+                sprintf(buffer, "User updated: %s", uid);
+                break;
+        }
+    }
+
     printf("[msg] %d bytes: %s\n", (int)count, buffer);
 
-    sprintf(buffer, "msg recebida\n");
+    // sprintf(buffer, "msg recebida\n");
     count = send(sock, buffer, strlen(buffer) + 1, 0);
 
     if (count != strlen(buffer) + 1) {
@@ -203,6 +258,16 @@ int handle_client(int sock) {
     }
 
     return 0;
+}
+
+void kill_server(int has_peer, int peersock) {
+    if (!has_peer) return;
+
+    char buffer[MSGSIZE];
+    sprintf(buffer, "Peer %d disconnected", my_id);
+    send(peersock, buffer, strlen(buffer) + 1, 0);
+
+    memset(buffer, 0, MSGSIZE);
 }
 
 int main(int argc, char **argv) {
@@ -230,10 +295,12 @@ int main(int argc, char **argv) {
     FD_ZERO(&current_socks);
     FD_SET(clientsock, &current_socks);
     FD_SET(p2psock, &current_socks);
+    FD_SET(STDIN_FILENO, &current_socks);
 
     int has_peer = 0;
     int peersock;
     n_clients = 0;
+    n_users = 0;
 
     char buffer[MSGSIZE];
 
@@ -247,6 +314,12 @@ int main(int argc, char **argv) {
 
         for (int i = 0; i < FD_SETSIZE; i++) {
             if (FD_ISSET(i, &ready_socks)) {
+                // if (!fgets(line, MSGSIZE - 1, stdin)) {
+                //     continue;
+                // } else {
+                //     puts(line);
+                // }
+
                 if (i == clientsock) {
                     int newclientsock = accept(clientsock, NULL, NULL);
 
@@ -289,8 +362,18 @@ int main(int argc, char **argv) {
 
                             sprintf(buffer, "New Peer ID: %d", peer_id);
                             send(newpeersock, buffer, strlen(buffer) + 1, 0);
-                            has_peer++;
+                            has_peer = 1;
                         }
+                    }
+                } else if (i == STDIN_FILENO) {
+                    char line[MSGSIZE];
+                    if (!fgets(line, MSGSIZE - 1, stdin)) {
+                        continue;
+                    }
+
+                    if (0 == strncmp(line, "kill", 4)) {
+                        kill_server(has_peer, peersock);
+                        return 1;
                     }
                 } else {
                     if (has_peer && i == peersock) {

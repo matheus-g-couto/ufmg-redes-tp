@@ -82,14 +82,25 @@ int main(int argc, char **argv) {
         printf("mensagem ('kill' para encerrar)> ");
         fgets(buffer, MSGSIZE - 1, stdin);
 
-        size_t count = send(usersock, buffer, strlen(buffer) + 1, 0);
-        if (count != strlen(buffer) + 1) {
-            logexit("erro no send\n");
+        if (strncmp(buffer, "kill", 4) == 0) {
+            send(usersock, buffer, strlen(buffer) + 1, 0);
+            send(locsock, buffer, strlen(buffer) + 1, 0);
+            printf("SU Successful disconnect\nSL Successful disconnect\n");
+            break;
         }
 
-        if (strncmp(buffer, "kill", 4) == 0) {
-            printf("encerrando conexão...\n");
-            break;
+        size_t count;
+        if (0 == strncmp(buffer, "add", 3)) {
+            count = send(usersock, buffer, strlen(buffer) + 1, 0);
+            if (count != strlen(buffer) + 1) {
+                logexit("erro no send\n");
+            }
+        } else {
+            count = send(usersock, buffer, strlen(buffer) + 1, 0);
+            count = send(locsock, buffer, strlen(buffer) + 1, 0);
+            if (count != strlen(buffer) + 1) {
+                logexit("erro no send\n");
+            }
         }
 
         memset(buffer, 0, MSGSIZE);
