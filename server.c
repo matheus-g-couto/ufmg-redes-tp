@@ -172,9 +172,6 @@ int main(int argc, char **argv) {
     int clientsock = start_client_sock(client_port);
     int p2psock = start_p2p_sock(p2p_port);
 
-    // *users = malloc(10 * sizeof(user_info));
-    // active_con = 0;
-
     // adiciona os sockets ao set
     fd_set current_socks, ready_socks;
     FD_ZERO(&current_socks);
@@ -195,7 +192,6 @@ int main(int argc, char **argv) {
 
         for (int i = 0; i < FD_SETSIZE; i++) {
             if (FD_ISSET(i, &ready_socks)) {
-                printf("aaaa\n");
                 if (i == clientsock) {
                     int newclientsock = accept(clientsock, NULL, NULL);
 

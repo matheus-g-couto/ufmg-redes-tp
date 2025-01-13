@@ -17,6 +17,25 @@ void usage(char **argv) {
     exit(EXIT_FAILURE);
 }
 
+int start_server_sock(const char *ip, uint16_t port) {
+    sockaddr_storage storage;
+    if (0 != addrparse(ip, port, &storage)) {
+        logexit("erro no parse\n");
+    }
+
+    int sock = socket(storage.ss_family, SOCK_STREAM, 0);
+    if (sock == -1) {
+        logexit("erro no socket\n");
+    }
+
+    sockaddr *addr = (sockaddr *)(&storage);
+    if (0 != connect(sock, addr, sizeof(storage))) {
+        logexit("erro na conexao\n");
+    }
+
+    return sock;
+}
+
 int main(int argc, char **argv) {
     if (argc < 5) {
         usage(argv);
@@ -33,46 +52,8 @@ int main(int argc, char **argv) {
     }
 
     // handle user server connection
-    sockaddr_storage user_storage;
-    if (0 != addrparse(argv[1], user_port, &user_storage)) {
-        logexit("erro no parse\n");
-    }
-
-    int usersock = socket(user_storage.ss_family, SOCK_STREAM, 0);
-    if (usersock == -1) {
-        logexit("erro no socket\n");
-    }
-
-    sockaddr *useraddr = (sockaddr *)(&user_storage);
-    if (0 != connect(usersock, useraddr, sizeof(user_storage))) {
-        logexit("erro na conexao\n");
-    }
-
-    char useraddrstr[MSGSIZE];
-    addrtostr(useraddr, useraddrstr, MSGSIZE);
-
-    printf("connected to SU: %s\n", useraddrstr);
-
-    // handle loc server connection
-    sockaddr_storage loc_storage;
-    if (0 != addrparse(argv[1], loc_port, &loc_storage)) {
-        logexit("erro no parse\n");
-    }
-
-    int locsock = socket(loc_storage.ss_family, SOCK_STREAM, 0);
-    if (locsock == -1) {
-        logexit("erro no socket\n");
-    }
-
-    sockaddr *locaddr = (sockaddr *)(&loc_storage);
-    if (0 != connect(locsock, locaddr, sizeof(loc_storage))) {
-        logexit("erro na conexao\n");
-    }
-
-    char locaddrstr[MSGSIZE];
-    addrtostr(locaddr, locaddrstr, MSGSIZE);
-
-    printf("connected to SL: %s\n", locaddrstr);
+    int usersock = start_server_sock(argv[1], user_port);
+    int locsock = start_server_sock(argv[1], loc_port);
 
     char buffer[MSGSIZE];
     while (1) {
@@ -99,7 +80,8 @@ int main(int argc, char **argv) {
         puts(buffer);
     }
 
-    exit(EXIT_SUCCESS);
+    close(usersock);
+    close(locsock);
 
     return 0;
 }
