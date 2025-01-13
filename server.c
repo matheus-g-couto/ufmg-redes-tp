@@ -160,6 +160,19 @@ void kill_client(Client client) {
     n_clients--;
 }
 
+int handle_peer(int sock) {
+    char buffer[MSGSIZE];
+    memset(buffer, 0, MSGSIZE);
+
+    size_t count = recv(sock, buffer, MSGSIZE, 0);
+    if (count <= 0) {
+        return 1;
+    }
+    puts(buffer);
+
+    return 0;
+}
+
 int handle_client(int sock) {
     char buffer[MSGSIZE];
     memset(buffer, 0, MSGSIZE);
@@ -175,15 +188,9 @@ int handle_client(int sock) {
         Client to_kill = get_client(client_list, n_clients, sock);
         kill_client(to_kill);
 
-        count = send(sock, buffer, strlen(buffer) + 1, 0);
+        send(sock, buffer, strlen(buffer) + 1, 0);
 
         return 1;
-    }
-
-    if (0 == strncmp(buffer, "New Peer ID", 11)) {
-        puts(buffer);
-        sscanf(buffer, "New Peer ID: %d", &my_id);
-        return 0;
     }
 
     printf("[msg] %d bytes: %s\n", (int)count, buffer);
@@ -225,6 +232,7 @@ int main(int argc, char **argv) {
     FD_SET(p2psock, &current_socks);
 
     int has_peer = 0;
+    int peersock;
     n_clients = 0;
 
     char buffer[MSGSIZE];
@@ -277,6 +285,7 @@ int main(int argc, char **argv) {
 
                             printf("Peer %d connected\n", peer_id);
                             FD_SET(newpeersock, &current_socks);
+                            peersock = newpeersock;
 
                             sprintf(buffer, "New Peer ID: %d", peer_id);
                             send(newpeersock, buffer, strlen(buffer) + 1, 0);
@@ -284,9 +293,22 @@ int main(int argc, char **argv) {
                         }
                     }
                 } else {
-                    if (has_peer && i == p2psock) {
-                        printf("p2p\n");
-                        // handlePeerCommunication(i, &has_peer);
+                    if (has_peer && i == peersock) {
+                        int end_connection = handle_peer(i);
+
+                        if (end_connection) {
+                            printf("Peer %d disconnected\n", peer_id);
+
+                            has_peer = 0;
+                            my_id = -1;
+                            peer_id = -1;
+
+                            printf("No peer found, starting to listen...\n");
+
+                            FD_CLR(i, &current_socks);
+
+                            close(i);
+                        }
                     } else {
                         int end_connection = handle_client(i);
 
