@@ -26,6 +26,8 @@ typedef struct p2p_data {
 } p2p_data;
 
 int peer_id, my_id;
+int peersock;
+int has_peer;
 
 int active_con;
 
@@ -37,6 +39,8 @@ User users[MAX_USERS];
 
 int n_locs;
 UserLoc userlocs[MAX_USERS];
+
+int find_user_loc_by_id(const char *uid);
 
 void usage() {
     printf("Exemplo de uso:\n");
@@ -174,7 +178,42 @@ int handle_peer(int sock) {
     if (count <= 0) {
         return 1;
     }
-    puts(buffer);
+
+    if (0 == strncmp(buffer, "New Peer ID", 11)) {
+        puts(buffer);
+        return 0;
+    }
+
+    if (0 == strncmp(buffer, "move", 4)) {
+        char uid[11];
+        int loc_id = -1;
+
+        if (2 == sscanf(buffer, "move %d %s", &loc_id, uid)) {
+            printf("REQ_LOCREG %s %d\n", uid, loc_id);
+
+            int pos = find_user_loc_by_id(uid), last_loc;
+            if (pos == -1) {
+                UserLoc new_user_loc;
+                strcpy(new_user_loc.id, uid);
+                new_user_loc.loc_id = loc_id;
+
+                userlocs[n_locs] = new_user_loc;
+
+                last_loc = -1;
+
+                n_locs++;
+            } else {
+                last_loc = userlocs[pos].loc_id;
+                userlocs[pos].loc_id = loc_id;
+            }
+
+            sprintf(buffer, "%d", last_loc);
+
+            size_t count = send(sock, buffer, MSGSIZE, 0);
+
+            return 0;
+        }
+    }
 
     return 0;
 }
@@ -192,7 +231,7 @@ int find_user_loc_by_id(const char *uid) {
         if (0 == strcmp(userlocs[i].id, uid)) return i;
     }
 
-    return 0;
+    return -1;
 }
 
 int add_user(const char *uid, int special) {
@@ -223,12 +262,41 @@ int find_user(const char *uid) {
     int result;
 
     int pos = find_user_loc_by_id(uid);
-    printf("%d\n", pos);
-    if (pos == 0) {
+    if (pos == -1) {
         result = 0;
     } else {
         result = userlocs[pos].loc_id;
     }
+    return result;
+}
+
+int move_user(const char *uid, const char *dir, int loc) {
+    int result = -2;
+
+    int pos = find_user_by_id(uid);
+
+    if (pos == -1) {
+        result = 0;
+    } else {
+        char buffer[MSGSIZE];
+
+        int newloc = -1;
+        if (0 == strcmp(dir, "in")) {
+            newloc = loc;
+        }
+
+        sprintf(buffer, "move %d %s", newloc, uid);
+
+        size_t count = send(peersock, buffer, strlen(buffer) + 1, 0);
+        if (count != strlen(buffer) + 1) {
+            logexit("send");
+        }
+
+        count = recv(peersock, buffer, MSGSIZE, 0);
+
+        sscanf(buffer, "%d", &result);
+    }
+
     return result;
 }
 
@@ -307,9 +375,35 @@ int handle_client(int sock) {
         }
     }
 
-    // printf("[msg] %d bytes: %s\n", (int)count, buffer);
+    if (0 == strncmp(buffer, "in", 2) || 0 == strncmp(buffer, "out", 3)) {
+        char uid[11], dir[3];
+        int result;
 
-    // sprintf(buffer, "msg recebida\n");
+        if (2 == sscanf(buffer, "%s %s", dir, uid)) {
+            printf("REQ_USRACCESS %s %s\n", uid, dir);
+
+            Client curr_client = get_client(client_list, n_clients, sock);
+            int client_loc = curr_client.loc;
+
+            result = move_user(uid, dir, client_loc);
+        } else {
+            result = -2;
+        }
+
+        switch (result) {
+            case -2:
+                sprintf(buffer, "wrong format");
+                break;
+
+            case 0:
+                sprintf(buffer, "User not found");
+                break;
+
+            default:
+                sprintf(buffer, "Ok. Last location: %d", result);
+        }
+    }
+
     count = send(sock, buffer, strlen(buffer) + 1, 0);
 
     if (count != strlen(buffer) + 1) {
@@ -324,9 +418,8 @@ void kill_server(int has_peer, int peersock) {
 
     char buffer[MSGSIZE];
     sprintf(buffer, "Peer %d disconnected", my_id);
-    send(peersock, buffer, strlen(buffer) + 1, 0);
 
-    memset(buffer, 0, MSGSIZE);
+    // send(peersock, buffer, strlen(buffer) + 1, 0);
 }
 
 int main(int argc, char **argv) {
@@ -356,8 +449,7 @@ int main(int argc, char **argv) {
     FD_SET(p2psock, &current_socks);
     FD_SET(STDIN_FILENO, &current_socks);
 
-    int has_peer = 0;
-    int peersock;
+    has_peer = 0;
     n_clients = n_users = n_locs = 0;
 
     char buffer[MSGSIZE];
@@ -372,12 +464,6 @@ int main(int argc, char **argv) {
 
         for (int i = 0; i < FD_SETSIZE; i++) {
             if (FD_ISSET(i, &ready_socks)) {
-                // if (!fgets(line, MSGSIZE - 1, stdin)) {
-                //     continue;
-                // } else {
-                //     puts(line);
-                // }
-
                 if (i == clientsock) {
                     int newclientsock = accept(clientsock, NULL, NULL);
 
@@ -404,25 +490,32 @@ int main(int argc, char **argv) {
                         send(newclientsock, buffer, strlen(buffer) + 1, 0);
                     }
                 } else if (i == p2psock) {
-                    int newpeersock = accept(p2psock, NULL, NULL);
+                    if (!has_peer) {
+                        struct sockaddr_in6 caddr;
+                        socklen_t csize = sizeof(caddr);
+                        int newpeersock = accept(p2psock, (sockaddr *)&caddr, &csize);
 
-                    if (newpeersock >= 0) {
-                        if (has_peer >= MAX_PEERS) {
-                            sprintf(buffer, "Peer limit exceeded");
-                            send(newpeersock, buffer, strlen(buffer) + 1, 0);
-                            close(newpeersock);
+                        if (newpeersock >= 0) {
+                            if (has_peer >= MAX_PEERS) {
+                                sprintf(buffer, "Peer limit exceeded");
+                                send(newpeersock, buffer, strlen(buffer) + 1, 0);
+                                close(newpeersock);
+                            } else {
+                                peer_id = rand() % 20;
+
+                                printf("Peer %d connected\n", peer_id);
+                                FD_SET(newpeersock, &current_socks);
+                                peersock = newpeersock;
+
+                                sprintf(buffer, "New Peer ID: %d", peer_id);
+                                send(newpeersock, buffer, strlen(buffer) + 1, 0);
+                                has_peer = 1;
+                            }
                         } else {
-                            peer_id = rand() % 20;
-
-                            printf("Peer %d connected\n", peer_id);
-                            FD_SET(newpeersock, &current_socks);
-                            peersock = newpeersock;
-
-                            sprintf(buffer, "New Peer ID: %d", peer_id);
-                            send(newpeersock, buffer, strlen(buffer) + 1, 0);
-                            has_peer = 1;
+                            handle_peer(i);
                         }
                     }
+
                 } else if (i == STDIN_FILENO) {
                     char line[MSGSIZE];
                     if (!fgets(line, MSGSIZE - 1, stdin)) {

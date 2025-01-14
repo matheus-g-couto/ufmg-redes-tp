@@ -114,6 +114,18 @@ int main(int argc, char **argv) {
                 break;
             }
             puts(buffer);
+        } else if (0 == strncmp(buffer, "in", 2) || 0 == strncmp(buffer, "out", 3)) {
+            count = send(usersock, buffer, strlen(buffer) + 1, 0);
+            if (count != strlen(buffer) + 1) {
+                logexit("erro no send\n");
+            }
+            memset(buffer, 0, MSGSIZE);
+
+            count = recv(usersock, buffer, MSGSIZE, 0);
+            if (count == 0) {
+                break;
+            }
+            puts(buffer);
         } else {
             count = send(usersock, buffer, strlen(buffer) + 1, 0);
             count = send(locsock, buffer, strlen(buffer) + 1, 0);
@@ -137,14 +149,6 @@ int main(int argc, char **argv) {
             }
             puts(buffer);
         }
-
-        // memset(buffer, 0, MSGSIZE);
-
-        // count = recv(usersock, buffer, MSGSIZE, 0);
-        // if (count == 0) {
-        //     break;
-        // }
-        // puts(buffer);
     }
 
     close(usersock);
