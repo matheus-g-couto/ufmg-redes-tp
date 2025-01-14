@@ -79,7 +79,6 @@ int main(int argc, char **argv) {
 
     while (1) {
         memset(buffer, 0, MSGSIZE);
-        printf("mensagem ('kill' para encerrar)> ");
         fgets(buffer, MSGSIZE - 1, stdin);
 
         if (strncmp(buffer, "kill", 4) == 0) {
@@ -90,7 +89,8 @@ int main(int argc, char **argv) {
         }
 
         size_t count;
-        if (0 == strncmp(buffer, "add", 3) || 0 == strncmp(buffer, "in", 2) || 0 == strncmp(buffer, "out", 3)) {
+        if (0 == strncmp(buffer, "add", 3) || (0 == strncmp(buffer, "in", 2) && 0 != strncmp(buffer, "inspect", 7)) ||
+            0 == strncmp(buffer, "out", 3)) {
             count = send(usersock, buffer, strlen(buffer) + 1, 0);
             if (count != strlen(buffer) + 1) {
                 logexit("erro no send\n");
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
                 break;
             }
             puts(buffer);
-        } else if (0 == strncmp(buffer, "find", 4)) {
+        } else if (0 == strncmp(buffer, "find", 4) || 0 == strncmp(buffer, "inspect", 7)) {
             count = send(locsock, buffer, strlen(buffer) + 1, 0);
             if (count != strlen(buffer) + 1) {
                 logexit("erro no send\n");

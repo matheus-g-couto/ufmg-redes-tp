@@ -61,38 +61,6 @@ int addrparse(const char* addrstr, uint16_t port, sockaddr_storage* storage) {
     return -1;
 }
 
-void addrtostr(const sockaddr* addr, char* str, size_t strsize) {
-    int version;
-    char addrstr[INET_ADDRSTRLEN];
-    uint16_t port;
-
-    if (addr->sa_family == AF_INET) {
-        version = 4;
-        sockaddr_in* addr4 = (sockaddr_in*)addr;
-
-        if (!inet_ntop(AF_INET, &(addr4->sin_addr), addrstr, INET_ADDRSTRLEN + 1)) {
-            logexit("ntop");
-        }
-
-        port = ntohs(addr4->sin_port);
-    } else if (addr->sa_family == AF_INET6) {
-        version = 6;
-        sockaddr_in6* addr6 = (sockaddr_in6*)addr;
-
-        if (!inet_ntop(AF_INET6, &(addr6->sin6_addr), addrstr, INET6_ADDRSTRLEN + 1)) {
-            logexit("ntop");
-        }
-
-        port = ntohs(addr6->sin6_port);
-    } else {
-        logexit("unknown protocol");
-    }
-
-    if (str) {
-        sprintf(str, "IPv%d %s %hu", version, addrstr, port);
-    }
-}
-
 Client get_client(Client* clist, int n, int sock) {
     for (int i = 0; i < n; i++) {
         if (clist[i].sock == sock) return clist[i];

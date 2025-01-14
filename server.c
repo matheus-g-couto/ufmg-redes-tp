@@ -10,7 +10,6 @@
 
 #include "common.h"
 
-#define MAX_CLIENT_CONNECTIONS 10
 #define MAX_PEERS 1
 
 typedef struct sockaddr_storage sockaddr_storage;
@@ -32,7 +31,7 @@ int has_peer;
 int active_con;
 
 int n_clients;
-Client client_list[10];
+Client client_list[MAX_CLIENTS];
 
 int n_users;
 User users[MAX_USERS];
@@ -41,6 +40,7 @@ int n_locs;
 UserLoc userlocs[MAX_USERS];
 
 int find_user_loc_by_id(const char *uid);
+int find_user_by_id(const char *uid);
 
 void usage() {
     printf("Exemplo de uso:\n");
@@ -93,7 +93,7 @@ int start_client_sock(uint16_t port) {
         logexit("erro no bind");
     }
 
-    if (0 != listen(sock, MAX_CLIENT_CONNECTIONS)) {
+    if (0 != listen(sock, MAX_CLIENTS)) {
         logexit("listen");
     }
 
@@ -140,6 +140,8 @@ int start_p2p_sock(uint16_t port) {
             peer_id = rand() % 20;
             printf("Peer %d connected\n", peer_id);
 
+            peersock = sock;
+
             memset(buffer, 0, MSGSIZE);
             sprintf(buffer, "New Peer ID: %d", peer_id);
 
@@ -181,7 +183,6 @@ int handle_peer(int sock) {
 
     if (0 == strncmp(buffer, "New Peer ID", 11)) {
         puts(buffer);
-        return 0;
     }
 
     if (0 == strncmp(buffer, "move", 4)) {
@@ -209,9 +210,20 @@ int handle_peer(int sock) {
 
             sprintf(buffer, "%d", last_loc);
 
-            size_t count = send(sock, buffer, MSGSIZE, 0);
+            send(sock, buffer, MSGSIZE, 0);
+        }
+    }
 
-            return 0;
+    if (0 == strncmp(buffer, "auth", 4)) {
+        char uid[11];
+
+        if (1 == sscanf(buffer, "auth %s", uid)) {
+            printf("REQ_USRAUTH %s\n", uid);
+
+            int pos = find_user_by_id(uid);
+
+            sprintf(buffer, "has auth %d", users[pos].special);
+            send(sock, buffer, MSGSIZE, 0);
         }
     }
 
@@ -300,14 +312,42 @@ int move_user(const char *uid, const char *dir, int loc) {
     return result;
 }
 
+int get_loc_list(const char *uid, int loc, char *list) {
+    int result;
+
+    char buffer[MSGSIZE];
+    sprintf(buffer, "auth %s", uid);
+
+    size_t count = send(peersock, buffer, strlen(buffer) + 1, 0);
+    if (count != strlen(buffer) + 1) {
+        logexit("send");
+    }
+
+    count = recv(peersock, buffer, MSGSIZE, 0);
+
+    int auth;
+    if (1 == sscanf(buffer, "has auth %d", &auth)) {
+        if (auth == 0) return 0;
+
+        for (int i = 0; i < n_locs; i++) {
+            if (userlocs[i].loc_id == loc) {
+                strcat(list, userlocs[i].id);
+                strcat(list, ", ");
+            }
+        }
+
+        result = 1;
+    }
+
+    return result;
+}
+
 int handle_client(int sock) {
     char buffer[MSGSIZE];
     memset(buffer, 0, MSGSIZE);
 
     size_t count = recv(sock, buffer, MSGSIZE, 0);
     if (count <= 0) {
-        printf("[log] conexão encerrada\n");
-
         return 1;
     }
 
@@ -375,7 +415,7 @@ int handle_client(int sock) {
         }
     }
 
-    if (0 == strncmp(buffer, "in", 2) || 0 == strncmp(buffer, "out", 3)) {
+    if ((0 == strncmp(buffer, "in", 2) && 0 != strncmp(buffer, "inspect", 7)) || 0 == strncmp(buffer, "out", 3)) {
         char uid[11], dir[4];
         int result;
 
@@ -401,6 +441,40 @@ int handle_client(int sock) {
 
             default:
                 sprintf(buffer, "Ok. Last location: %d", result);
+        }
+    }
+
+    if (0 == strncmp(buffer, "inspect", 7)) {
+        char uid[11];
+        int loc, result;
+
+        char list[331];
+        memset(list, 0, 331);
+
+        if (2 == sscanf(buffer, "inspect %s %d", uid, &loc)) {
+            printf("REQ_LOCLIST %s %d\n", uid, loc);
+
+            result = get_loc_list(uid, loc, list);
+        } else {
+            result = -2;
+        }
+
+        // remove a virgula e o ultimo espaco
+        int len = strlen(list);
+        list[len - 2] = '\0';
+
+        switch (result) {
+            case -2:
+                sprintf(buffer, "wrong format");
+                break;
+
+            case 0:
+                sprintf(buffer, "Permission denied");
+                break;
+
+            default:
+                sprintf(buffer, "List of people at the specified location: ");
+                strcat(buffer, list);
         }
     }
 

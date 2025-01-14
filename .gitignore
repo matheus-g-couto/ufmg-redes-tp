@@ -1,5 +1,3 @@
 *.o
 client
 server
-peer.c
-server-mt.c

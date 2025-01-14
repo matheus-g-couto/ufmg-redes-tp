@@ -34,7 +34,8 @@ typedef struct sockaddr sockaddr;
 #define OK 0
 
 #define MSGSIZE 500
-#define MAX_USERS 10
+#define MAX_USERS 30
+#define MAX_CLIENTS 10
 
 #endif
 
@@ -59,7 +60,5 @@ void logexit(const char* msg);
 uint16_t format_port(const char* portstr);
 
 int addrparse(const char* addrstr, uint16_t port, sockaddr_storage* storage);
-
-void addrtostr(const sockaddr* addr, char* str, size_t strsize);
 
 Client get_client(Client* clist, int n, int sock);
