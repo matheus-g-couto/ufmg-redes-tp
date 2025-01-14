@@ -376,7 +376,7 @@ int handle_client(int sock) {
     }
 
     if (0 == strncmp(buffer, "in", 2) || 0 == strncmp(buffer, "out", 3)) {
-        char uid[11], dir[3];
+        char uid[11], dir[4];
         int result;
 
         if (2 == sscanf(buffer, "%s %s", dir, uid)) {
